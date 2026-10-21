@@ -1,0 +1,232 @@
+PS C:\WINDOWS\system32> # ==============================================================================
+>> # SCRIPT UNIVERSAL Y MULTI-EQUIPO - BLOQUEO ADOBE GENUINE SERVICE
+>> # ==============================================================================
+>>
+>> # 1. VERIFICAR PRIVILEGIOS DE ADMINISTRADOR
+>> if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+>>     Write-Warning "Se requieren derechos de Administrador para ejecutar este script."
+>>     exit
+>> }
+>>
+>> Write-Host "Iniciando despliegue de bloqueo universal..." -ForegroundColor Cyan
+>>
+>> # 2. DETENER PROCESOS Y DESHABILITAR SERVICIOS
+>> $processes = @("AGSService", "AdobeGCClient", "AGCKeepAlive", "AdobeIPCBroker", "CCXProcess", "AdobeNotificationClient")
+>> foreach ($proc in $processes) {
+>>     Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
+>> }
+>>
+>> $services = @("AGSService", "AdobeARMservice", "AGMService")
+>> foreach ($svc in $services) {
+>>     Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+>>     Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
+>> }
+>>
+>> # 3. RUTAS UNIVERSALES CON VARIABLES DE ENTORNO
+>> $pf86 = ${env:ProgramFiles(x86)}
+>> if (-not $pf86) { $pf86 = $env:ProgramFiles }
+>> $pf64 = $env:ProgramFiles
+>> $progData = $env:ProgramData
+>> $localApp = $env:LOCALAPPDATA
+>>
+>> $targetPaths = @(
+>>     "$pf86\Common Files\Adobe\AdobeGCClient",
+>>     "$pf64\Common Files\Adobe\AdobeGCClient",
+>>     "$progData\Adobe\AdobeGCClient",
+>>     "$localApp\Adobe\AdobeGCClient",
+>>     "$pf86\Common Files\Adobe\OOBE\PDApp\P7",
+>>     "$pf86\Common Files\Adobe\Adobe Desktop Common\AGC"
+>> )
+>>
+>> # 4. LIMPIEZA Y RESTRICCIÓN DE PERMISOS (ACL) EN CARPETAS
+>> foreach ($path in $targetPaths) {
+>>     if (Test-Path $path) {
+>>         Remove-Item -Path "$path\*" -Recurse -Force -ErrorAction SilentlyContinue
+>>         try {
+>>             $acl = Get-Acl $path
+>>             $denyEveryone = New-Object System.Security.AccessControl.FileSystemAccessRule("EVERYONE", "FullControl", "ContainerInherit, ObjectInherit", "None", "Deny")
+>>             $denySystem   = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM", "FullControl", "ContainerInherit, ObjectInherit", "None", "Deny")
+>>             $acl.AddAccessRule($denyEveryone)
+>>             $acl.AddAccessRule($denySystem)
+>>             Set-Acl -Path $path -AclObject $acl -ErrorAction SilentlyContinue
+>>             Write-Host "Carpeta protegida y bloqueada: $path" -ForegroundColor Green
+>>         } catch {
+>>             Write-Host "No se modificaron permisos en: $path" -ForegroundColor Yellow
+>>         }
+>>     }
+>> }
+>>
+>> # 5. MODIFICACIÓN DE POLÍTICAS EN EL REGISTRO
+>> $regKeys = @(
+>>     "HKLM:\SOFTWARE\Adobe\AdobeGCClient",
+>>     "HKLM:\SOFTWARE\WOW6432Node\Adobe\AdobeGCClient",
+>>     "HKLM:\SOFTWARE\Policies\Adobe\AdobeGCClient"
+>> )
+>>
+>> foreach ($reg in $regKeys) {
+>>     if (-not (Test-Path $reg)) {
+>>         New-Item -Path $reg -Force | Out-Null
+>>     }
+>>     Set-ItemProperty -Path $reg -Name "DisallowAGS" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+>>     Set-ItemProperty -Path $reg -Name "Disabled" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+>> }
+>>
+>> # 6. ARCHIVO HOSTS (REDIRECCIÓN A 127.0.0.1)
+>> $hostsPath = "$env:windir\System32\drivers\etc\hosts"
+>> $adobeHosts = @(
+>>     "127.0.0.1 genuine.adobe.com",
+>>     "127.0.0.1 prod.agsservice.adobe.com",
+>>     "127.0.0.1 ags-update.adobe.com",
+>>     "127.0.0.1 ic.adobe.io"
+>> )
+>>
+>> $currentHosts = Get-Content $hostsPath -ErrorAction SilentlyContinue
+>> foreach ($entry in $adobeHosts) {
+>>     if ($currentHosts -notcontains $entry) {
+>>         Add-Content -Path $hostsPath -Value "`n$entry" -ErrorAction SilentlyContinue
+>>     }
+>> }
+>>
+>> # 7. REGLAS EN EL FIREWALL DE WINDOWS
+>> $executablesToBlock = @(
+>>     "$pf86\Common Files\Adobe\AdobeGCClient\AGSService.exe",
+>>     "$pf86\Common Files\Adobe\AdobeGCClient\AdobeGCClient.exe",
+>>     "$pf64\Common Files\Adobe\AdobeGCClient\AGSService.exe"
+>> )
+>>
+>> foreach ($exe in $executablesToBlock) {$leaf = Split-Path $exe -Leaf$ruleNameOut = "Bloqueo AGS Salida - $leaf"
+>>     $ruleNameIn  = "Bloqueo AGS Entrada - $leaf"
+>>
+>>     Remove-NetFirewallRule -DisplayName $ruleNameOut -ErrorAction SilentlyContinue
+>>     Remove-NetFirewallRule -DisplayName $ruleNameIn -ErrorAction SilentlyContinue
+>>
+>>     New-NetFirewallRule -DisplayName $ruleNameOut -Direction Outbound -Program$exe -Action Block -ErrorAction SilentlyContinue | Out-Null
+>>     New-NetFirewallRule -DisplayName $ruleNameIn -Direction Inbound -Program$exe -Action Block -ErrorAction SilentlyContinue | Out-Null
+>> }
+>>
+>> # 8. DESPLIEGUE Y REGISTRO DE TAREA PROGRAMADA PERMANENTE
+>> $destFolder = "$env:SystemDrive\Scripts"
+>> if (-not (Test-Path $destFolder)) { New-Item -Path$destFolder -ItemType Directory | Out-Null }
+>>
+>> $dailyScript = "$destFolder\BloqueoAdobeDiario.ps1"
+>> $dailyCode = 'Stop-Process -Name "AGSService","AdobeGCClient" -Force -ErrorAction SilentlyContinue; Set-Service -Name "AGSService" -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name "AGSService" -Force -ErrorAction SilentlyContinue'
+>> Set-Content -Path $dailyScript -Value$dailyCode -Encoding UTF8 -Force
+>>
+>> $act = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dailyScript`""
+>> $t1 = New-ScheduledTaskTrigger -AtStartup$t2 = New-ScheduledTaskTrigger -Daily -At 9:00AM
+>>
+>> Register-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine" -Action $act -Trigger @($t1,$t2) -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null
+>>
+>> Write-Host "--------------------------------------------------------" -ForegroundColor Cyan
+>> Write-Host "¡EQUIPO BLINDADO CORRECTAMENTE!" -ForegroundColor Green
+>> Write-Host "La tarea 'BloqueoDiarioAdobeGenuine' se ha registrado." -ForegroundColor Yellow
+>> Write-Host "--------------------------------------------------------" -ForegroundColor Cyan
+>>
+Iniciando despliegue de bloqueo universal...
+No se modificaron permisos en: C:\Program Files (x86)\Common Files\Adobe\AdobeGCClient
+Split-Path : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'Leaf$ruleNameOut'.
+En línea: 97 Carácter: 64
++ ... xecutablesToBlock) {$leaf = Split-Path $exe -Leaf$ruleNameOut = "Bloq ...
++                                                 ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Split-Path], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,Microsoft.PowerShell.Commands.SplitPathCommand
+
+Remove-NetFirewallRule : No se puede validar el argumento del parámetro 'DisplayName'. El argumento es null. Proporcione un
+valor válido para el argumento e intente ejecutar el comando de nuevo.
+En línea: 100 Carácter: 41
++     Remove-NetFirewallRule -DisplayName $ruleNameOut -ErrorAction Sil ...
++                                         ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [Remove-NetFirewallRule], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationError,Remove-NetFirewallRule
+
+New-NetFirewallRule : No se puede enlazar el argumento con el parámetro 'DisplayName' porque es una cadena vacía.
+En línea: 103 Carácter: 38
++     New-NetFirewallRule -DisplayName $ruleNameOut -Direction Outbound ...
++                                      ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [New-NetFirewallRule], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorEmptyStringNotAllowed,New-NetFirewallRule
+
+New-NetFirewallRule : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'Program$exe'.
+En línea: 104 Carácter: 69
++ ... Rule -DisplayName $ruleNameIn -Direction Inbound -Program$exe -Action ...
++                                                      ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [New-NetFirewallRule], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,New-NetFirewallRule
+
+Split-Path : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'Leaf$ruleNameOut'.
+En línea: 97 Carácter: 64
++ ... xecutablesToBlock) {$leaf = Split-Path $exe -Leaf$ruleNameOut = "Bloq ...
++                                                 ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Split-Path], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,Microsoft.PowerShell.Commands.SplitPathCommand
+
+Remove-NetFirewallRule : No se puede validar el argumento del parámetro 'DisplayName'. El argumento es null. Proporcione un
+valor válido para el argumento e intente ejecutar el comando de nuevo.
+En línea: 100 Carácter: 41
++     Remove-NetFirewallRule -DisplayName $ruleNameOut -ErrorAction Sil ...
++                                         ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [Remove-NetFirewallRule], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationError,Remove-NetFirewallRule
+
+New-NetFirewallRule : No se puede enlazar el argumento con el parámetro 'DisplayName' porque es una cadena vacía.
+En línea: 103 Carácter: 38
++     New-NetFirewallRule -DisplayName $ruleNameOut -Direction Outbound ...
++                                      ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [New-NetFirewallRule], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorEmptyStringNotAllowed,New-NetFirewallRule
+
+New-NetFirewallRule : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'Program$exe'.
+En línea: 104 Carácter: 69
++ ... Rule -DisplayName $ruleNameIn -Direction Inbound -Program$exe -Action ...
++                                                      ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [New-NetFirewallRule], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,New-NetFirewallRule
+
+Split-Path : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'Leaf$ruleNameOut'.
+En línea: 97 Carácter: 64
++ ... xecutablesToBlock) {$leaf = Split-Path $exe -Leaf$ruleNameOut = "Bloq ...
++                                                 ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Split-Path], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,Microsoft.PowerShell.Commands.SplitPathCommand
+
+Remove-NetFirewallRule : No se puede validar el argumento del parámetro 'DisplayName'. El argumento es null. Proporcione un
+valor válido para el argumento e intente ejecutar el comando de nuevo.
+En línea: 100 Carácter: 41
++     Remove-NetFirewallRule -DisplayName $ruleNameOut -ErrorAction Sil ...
++                                         ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [Remove-NetFirewallRule], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationError,Remove-NetFirewallRule
+
+New-NetFirewallRule : No se puede enlazar el argumento con el parámetro 'DisplayName' porque es una cadena vacía.
+En línea: 103 Carácter: 38
++     New-NetFirewallRule -DisplayName $ruleNameOut -Direction Outbound ...
++                                      ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [New-NetFirewallRule], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorEmptyStringNotAllowed,New-NetFirewallRule
+
+New-NetFirewallRule : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'Program$exe'.
+En línea: 104 Carácter: 69
++ ... Rule -DisplayName $ruleNameIn -Direction Inbound -Program$exe -Action ...
++                                                      ~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [New-NetFirewallRule], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,New-NetFirewallRule
+
+Set-Content : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'Value$dailyCode'.
+En línea: 113 Carácter: 32
++ Set-Content -Path $dailyScript -Value$dailyCode -Encoding UTF8 -Force
++                                ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Set-Content], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,Microsoft.PowerShell.Commands.SetContentCommand
+
+New-ScheduledTaskTrigger : No se encuentra ningún parámetro que coincida con el nombre del parámetro 'AtStartup$t2'.
+En línea: 116 Carácter: 32
++ $t1 = New-ScheduledTaskTrigger -AtStartup$t2 = New-ScheduledTaskTrigg ...
++                                ~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [New-ScheduledTaskTrigger], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,New-ScheduledTaskTrigger
+
+--------------------------------------------------------
+¡EQUIPO BLINDADO CORRECTAMENTE!
+La tarea 'BloqueoDiarioAdobeGenuine' se ha registrado.
+--------------------------------------------------------
+PS C:\WINDOWS\system32>

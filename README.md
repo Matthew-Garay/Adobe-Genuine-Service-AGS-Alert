@@ -15,7 +15,11 @@ Este repositorio contiene archivos de respaldo, notas de configuración y docume
 Debido a las reglas de GitHub, **no se pueden subir archivos mayores a 100 MB directamente a un repositorio**.  
 Archivos grandes como AcrobatProfessional20.0-mul.rar (686 MB) **no se pueden subir aquí** y serán rechazados al hacer push.
 
-Para guardar archivos grandes de instalación de Adobe, usa servicios en la nube como Google Drive, Dropbox, OneDrive o Mega.
+Para guardar archivos grandes de instalación de Adobe, usa servicios en la nube como:
+- Google Drive
+- Dropbox
+- OneDrive
+- Mega
 
 ## ⚖️ Aviso de uso
 

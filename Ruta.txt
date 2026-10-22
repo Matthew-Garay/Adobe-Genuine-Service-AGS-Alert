@@ -1,18 +1,15 @@
-Ocpiar y eje Ejecuitar con administrador en power Shell lo que hay en :
+Copiar y eje Ejecutar con administrador en power Shell lo que hay en :
 
-Bloqueo adobe.txt
+if (-not (Test-Path "C:\Scripts")) { New-Item -Path "C:\Scripts" -ItemType Directory -Force | Out-Null }; [System.IO.File]::WriteAllText("C:\Scripts\BloqueoAdobeDiario.ps1", 'Stop-Process -Name AGSService,AdobeGCClient -Force -ErrorAction SilentlyContinue; Set-Service -Name AGSService -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name AGSService -Force -ErrorAction SilentlyContinue', [System.Text.Encoding]::UTF8); $act = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"`"C:\Scripts\BloqueoAdobeDiario.ps1`"`""; $t1 = New-ScheduledTaskTrigger -AtStartup; $t2 = New-ScheduledTaskTrigger -Daily -At 9:00AM; Register-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine" -Action $act -Trigger $t1,$t2 -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null; Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine"
+
+
+if (-not (Test-Path "C:\Scripts")) { New-Item -Path "C:\Scripts" -ItemType Directory -Force | Out-Null }; [System.IO.File]::WriteAllText("C:\Scripts\BloqueoAdobeDiario.ps1", 'Stop-Process -Name AGSService,AdobeGCClient -Force -ErrorAction SilentlyContinue; Set-Service -Name AGSService -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name AGSService -Force -ErrorAction SilentlyContinue', [System.Text.Encoding]::UTF8); $act = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"`"C:\Scripts\BloqueoAdobeDiario.ps1`"`""; $t1 = New-ScheduledTaskTrigger -AtStartup; $t2 = New-ScheduledTaskTrigger -Daily -At 9:00AM; Register-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine" -Action $act -Trigger $t1,$t2 -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null; Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine"
+
 
 Verificar:
-
-Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine"
-
-
-o
-
-
-$processes = @("AGSService","AdobeGCClient","AGCKeepAlive","AdobeIPCBroker"); foreach ($p in $processes) { Stop-Process -Name$p -Force -ErrorAction SilentlyContinue }; Set-Service -Name "AGSService" -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name "AGSService" -Force -ErrorAction SilentlyContinue; $pf86 = ${env:ProgramFiles(x86)}; if (-not$pf86) { $pf86 =$env:ProgramFiles }; $pf64 =$env:ProgramFiles; $targetPaths = @("$pf86\Common Files\Adobe\AdobeGCClient","$pf64\Common Files\Adobe\AdobeGCClient","$env:ProgramData\Adobe\AdobeGCClient"); foreach ($path in$targetPaths) { if (Test-Path $path) { Remove-Item -Path "$path\*" -Recurse -Force -ErrorAction SilentlyContinue; $acl = Get-Acl $path; $denyEveryone = New-Object System.Security.AccessControl.FileSystemAccessRule("EVERYONE","FullControl","ContainerInherit, ObjectInherit","None","Deny"); $acl.AddAccessRule($denyEveryone); Set-Acl -Path$path -AclObject $acl -ErrorAction SilentlyContinue } };$execs = @("$pf86\Common Files\Adobe\AdobeGCClient\AGSService.exe","$pf86\Common Files\Adobe\AdobeGCClient\AdobeGCClient.exe"); foreach ($exe in$execs) { $leaf = Split-Path$exe -Leaf; Remove-NetFirewallRule -DisplayName "Bloqueo AGS - $leaf" -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName "Bloqueo AGS - $leaf" -Direction Outbound -Program $exe -Action Block -ErrorAction SilentlyContinue | Out-Null }; if (-not (Test-Path "$env:SystemDrive\Scripts")) { New-Item -Path "$env:SystemDrive\Scripts" -ItemType Directory | Out-Null }; Set-Content -Path "$env:SystemDrive\Scripts\BloqueoAdobeDiario.ps1" -Value 'Stop-Process -Name "AGSService","AdobeGCClient" -Force -ErrorAction SilentlyContinue; Set-Service -Name "AGSService" -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name "AGSService" -Force -ErrorAction SilentlyContinue' -Encoding UTF8 -Force; $act = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$env:SystemDrive\Scripts\BloqueoAdobeDiario.ps1`""; $t1 = New-ScheduledTaskTrigger -AtStartup; $t2 = New-ScheduledTaskTrigger -Daily -At 9:00AM; Register-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine" -Action $act -Trigger @($t1,$t2) -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null; Write-Host "Proceso completado con éxito." -ForegroundColor Green
-
-Verificar:
-
-
 (Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine").Triggers
+
+Por ultimo
+
+Get-ScheduledTask -TaskName "*AdobeGC*" -ErrorAction SilentlyContinue | Disable-ScheduledTask
+Get-ScheduledTask -TaskName "*Adobe-Genuine*" -ErrorAction SilentlyContinue | Disable-ScheduledTask

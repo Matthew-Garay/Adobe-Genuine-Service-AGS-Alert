@@ -1,49 +1,59 @@
-﻿# Adobe Genuine Service (AGS) - Repositorio de Soporte
+﻿# Adobe Genuine Service AGS - Repositorio de Soporte
 
-Repositorio interno para documentación, archivos de respaldo y notas de configuración relacionadas con el servicio de autenticación genuina de Adobe (Adobe Genuine Service, AGS) y la gestión de instalaciones de productos Adobe.
+## A. Titulo del Proyecto y Resumen Ejecutivo
 
-## Contenido actual
+Adobe Genuine Service AGS es un repositorio interno de documentacion y archivos de respaldo relacionados con el servicio de autenticacion genuina de Adobe (Adobe Genuine Service, AGS) y la gestion de instalaciones de productos Adobe en entornos Windows. El problema que resuelve es la centralizacion de rutas de instalacion, directorios de productos y scripts de configuracion para el bloqueo o deshabilitacion de servicios de Adobe como AGSService, AdobeGCClient y tareas programadas asociadas. Su alcance tecnologico se limita a documentacion interna y almacenamiento de archivos grandes mediante Git LFS, sin componentes de ejecucion ni logica de negocio.
 
-| Archivo | Descripción |
-|---------|-------------|
-| `Rutas-Adobe.txt` | Rutas de instalación, directorios de productos Adobe y script de PowerShell para bloquear/deshabilitar servicios de Adobe (AGSService, AdobeGCClient y tareas programadas). |
-| `AcrobatProfessional20.0-mul.rar` | Instalador de Acrobat Professional 2020 (almacenado con Git LFS). |
+## B. Arquitectura del Sistema
 
-## ⚠️ Limitación de GitHub
+Este repositorio no implementa una arquitectura de software ejecutable. Funciona como repositorio de documentacion y almacenamiento de archivos binarios. El flujo de datos consiste en la clonacion del repositorio local, la descarga de archivos LFS mediante git lfs pull y la consulta de los archivos de texto y scripts para referencia interna. No hay componentes cliente-servidor, capas logicas ni interaccion entre modulos de software.
 
-Debido a las reglas de GitHub, los archivos mayores a 100 MB no se pueden subir directamente a un repositorio.  
-Archivos grandes como `AcrobatProfessional20.0-mul.rar` (aprox. 720 MB) se gestionan mediante **Git LFS (Large File Storage)**.
+## C. Caracteristicas Tecnicas Clave
 
-Las cuentas gratuitas de GitHub tienen un límite de **1 GB de almacenamiento LFS**.
+- Almacenamiento de archivos grandes mediante Git LFS (Large File Storage) para superar el limite de 100 MB por archivo en GitHub.
+- Scripts de PowerShell para bloquear o deshabilitar servicios de Adobe (AGSService, AdobeGCClient) y tareas programadas asociadas.
+- Documentacion de rutas de instalacion y directorios de productos Adobe.
+- No utiliza base de datos, ni mecanismos de concurrencia, ni procesamiento en tiempo real, ni protocolos de red propios.
+- Seguridad basada en el control de acceso del repositorio y en el aviso de uso interno; no hay autenticacion de aplicacion ni cifrado de datos en reposo.
 
-## ⚖️ Aviso de uso
+## D. Especificacion del Stack Tecnologico
 
-Este repositorio es de uso personal y tiene fines de documentación interna.  
-**No distribuyas ni uses este contenido para eludir licencias, activación o autenticación de software de terceros.**  
-El uso indebido puede violar los Términos de Servicio de Adobe y las políticas de GitHub.
+| Categoria | Tecnologia / Libreria |
+|-----------|----------------------|
+| Control de versiones | Git 2.0 o superior |
+| Almacenamiento de archivos grandes | Git LFS (Large File Storage) |
+| Scripts | PowerShell |
+| Sistema operativo objetivo | Windows |
 
-## Cómo clonar este repositorio
+## E. Guia de Instalacion, Configuracion y Despliegue
 
-Este repositorio utiliza Git LFS para archivos grandes. Asegúrate de tener Git LFS instalado antes de clonar:
+### Requisitos previos del sistema
 
-```bash
-# Instalar Git LFS (una sola vez)
+- Git 2.0 o superior instalado.
+- Git LFS instalado (git lfs install).
+- Conexion a Internet para descargar archivos LFS.
+- Sistema operativo Windows para ejecucion de scripts de PowerShell.
+
+### Secuencia de comandos para clonacion e instalacion
+
 git lfs install
-
-# Clonar el repositorio
 git clone https://github.com/Matthew-Garay/Adobe-Genuine-Service-AGS-Alert.git
-
-# Si ya clonaste sin LFS, descarga los archivos LFS existentes:
+cd Adobe-Genuine-Service-AGS-Alert
 git lfs pull
-```
 
-## Requisitos
+### Configuracion de variables de entorno
 
-- Git 2.0 o superior
-- Git LFS instalado (`git lfs install`)
-- Conexión a Internet para descargar archivos LFS
+Este proyecto no requiere archivo .env ni variables de entorno.
 
----
+### Comandos para ejecucion en entorno de Desarrollo
 
-**Repositorio:** Adobe-Genuine-Service-AGS-Alert  
-**Última actualización:** 23/10/2026
+No aplica; es un repositorio de documentacion y respaldo de archivos.
+
+### Comandos para ejecucion en entorno de Produccion
+
+No aplica; es un repositorio de documentacion y respaldo de archivos.
+
+## F. Creditos de Autoría
+
+Desarrollado por: Matthew Ilveneff Garay Perez
+Correo Electronico: 1911.garay.perez@gmail.com

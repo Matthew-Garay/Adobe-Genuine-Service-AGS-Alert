@@ -1,15 +1,19 @@
-Copiar y eje Ejecutar con administrador en power Shell lo que hay en :
+﻿Instrucciones de uso - Bloqueo de servicios Adobe (AGSService, AdobeGCClient)
 
-if (-not (Test-Path "C:\Scripts")) { New-Item -Path "C:\Scripts" -ItemType Directory -Force | Out-Null }; [System.IO.File]::WriteAllText("C:\Scripts\BloqueoAdobeDiario.ps1", 'Stop-Process -Name AGSService,AdobeGCClient -Force -ErrorAction SilentlyContinue; Set-Service -Name AGSService -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name AGSService -Force -ErrorAction SilentlyContinue', [System.Text.Encoding]::UTF8); $act = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"`"C:\Scripts\BloqueoAdobeDiario.ps1`"`""; $t1 = New-ScheduledTaskTrigger -AtStartup; $t2 = New-ScheduledTaskTrigger -Daily -At 9:00AM; Register-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine" -Action $act -Trigger $t1,$t2 -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null; Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine"
+1. Ejecutar PowerShell como administrador.
 
+2. Ejecutar el script de bloqueo ubicado en:
+   scripts/BloqueoAdobeDiario.ps1
 
-if (-not (Test-Path "C:\Scripts")) { New-Item -Path "C:\Scripts" -ItemType Directory -Force | Out-Null }; [System.IO.File]::WriteAllText("C:\Scripts\BloqueoAdobeDiario.ps1", 'Stop-Process -Name AGSService,AdobeGCClient -Force -ErrorAction SilentlyContinue; Set-Service -Name AGSService -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name AGSService -Force -ErrorAction SilentlyContinue', [System.Text.Encoding]::UTF8); $act = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"`"C:\Scripts\BloqueoAdobeDiario.ps1`"`""; $t1 = New-ScheduledTaskTrigger -AtStartup; $t2 = New-ScheduledTaskTrigger -Daily -At 9:00AM; Register-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine" -Action $act -Trigger $t1,$t2 -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null; Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine"
+   Ejemplo:
+   .\scripts\BloqueoAdobeDiario.ps1 -Force
 
+3. Verificar la tarea programada creada:
+   Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine"
 
-Verificar:
-(Get-ScheduledTask -TaskName "BloqueoDiarioAdobeGenuine").Triggers
+4. Deshabilitar tareas relacionadas con Adobe (si existen):
+   Get-ScheduledTask -TaskName "*AdobeGC*" -ErrorAction SilentlyContinue | Disable-ScheduledTask
+   Get-ScheduledTask -TaskName "*Adobe-Genuine*" -ErrorAction SilentlyContinue | Disable-ScheduledTask
 
-Por ultimo
-
-Get-ScheduledTask -TaskName "*AdobeGC*" -ErrorAction SilentlyContinue | Disable-ScheduledTask
-Get-ScheduledTask -TaskName "*Adobe-Genuine*" -ErrorAction SilentlyContinue | Disable-ScheduledTask
+El script instala automaticamente el archivo de bloqueo en C:\Scripts\BloqueoAdobeDiario.ps1
+y registra una tarea programada que se ejecuta al iniciar el sistema y diariamente a las 9:00 AM.

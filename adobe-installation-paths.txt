@@ -1,0 +1,21 @@
+# Adobe Genuine Service Blocking Instructions
+
+# Adobe Genuine Service (AGS) Blocking Instructions
+
+1. Run PowerShell as Administrator.
+
+2. Run the blocking script located in:
+   scripts/AdobeServiceBlocker.ps1
+
+   Example:
+   .\\scripts\\AdobeServiceBlocker.ps1 -Force
+
+3. Verify the scheduled task was created:
+   Get-ScheduledTask -TaskName "AdobeGenuineDailyBlocker"
+
+4. Disable Adobe-related tasks (if they exist):
+   Get-ScheduledTask -TaskName "*AdobeGC*" -ErrorAction SilentlyContinue | Disable-ScheduledTask
+   Get-ScheduledTask -TaskName "*Adobe-Genuine*" -ErrorAction SilentlyContinue | Disable-ScheduledTask
+
+The blocking script automatically installs the blocking file to C:\\Scripts\\AdobeServiceBlocker.ps1
+and registers a scheduled task that runs at system startup and daily at 9:00 AM.

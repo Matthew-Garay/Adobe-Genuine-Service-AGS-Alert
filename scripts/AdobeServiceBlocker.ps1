@@ -1,81 +1,385 @@
-# ============================================================================
-# AdobeServiceBlocker.ps1
-# Script to stop and disable Adobe services (AGSService, AdobeGCClient)
-# and register a daily scheduled task to run the blocker.
-# Refactored: modular logic, parameter validation, and error handling.
-# ============================================================================
+<#
+.SYNOPSIS
+    Stops and disables Adobe Genuine Service (AGS) and keeps it disabled.
 
-[CmdletBinding()]
+.DESCRIPTION
+    AdobeServiceBlocker installs a small, self-contained blocker script into a
+    directory that only Administrators and SYSTEM can write to, and registers a
+    scheduled task that runs it as SYSTEM at startup and once a day.
+
+    Each run of the blocker:
+      * stops the AGSService service and sets its startup type to Disabled
+      * terminates the AGSService and AdobeGCClient processes
+      * disables the Adobe Genuine scheduled tasks (AdobeGCInvoker-*, *Adobe-Genuine*)
+      * appends what it changed to a rotating log file
+
+    The original startup type of AGSService is saved on install and restored by
+    -Uninstall, so every change made by this tool can be reverted.
+
+.PARAMETER InstallDirectory
+    Where the blocker script, state file and log are stored.
+    Default: "$env:ProgramFiles\AGSBlocker".
+
+.PARAMETER TaskName
+    Name of the scheduled task. Default: AdobeGenuineDailyBlocker.
+
+.PARAMETER DailyTime
+    Time of the daily run, in 24-hour HH:mm format. Default: 09:00.
+
+.PARAMETER Force
+    Overwrite an existing installation and scheduled task.
+
+.PARAMETER Uninstall
+    Remove the scheduled task and install directory, restore the original
+    AGSService startup type and re-enable the Adobe Genuine scheduled tasks.
+
+.PARAMETER Status
+    Show the current state of the service, processes and scheduled tasks
+    without changing anything.
+
+.EXAMPLE
+    .\AdobeServiceBlocker.ps1
+    Installs the blocker with default settings.
+
+.EXAMPLE
+    .\AdobeServiceBlocker.ps1 -DailyTime 13:30 -Force
+    Reinstalls the blocker, running every day at 13:30.
+
+.EXAMPLE
+    .\AdobeServiceBlocker.ps1 -WhatIf
+    Shows what would change without changing anything.
+
+.EXAMPLE
+    .\AdobeServiceBlocker.ps1 -Uninstall
+    Reverts every change made by the tool.
+
+.NOTES
+    Requires Windows PowerShell 5.1+ and an elevated (Administrator) session.
+    Project: https://github.com/Matthew-Garay/Adobe-Genuine-Service-AGS-Alert
+#>
+
+[CmdletBinding(SupportsShouldProcess = $true, DefaultParameterSetName = 'Install')]
 param(
-    [string]$ScriptPath = "C:\Scripts\AdobeServiceBlocker.ps1",
-    [string]$TaskName = "AdobeGenuineDailyBlocker",
-    [switch]$Force
+    [Parameter(ParameterSetName = 'Install')]
+    [ValidateNotNullOrEmpty()]
+    [string]$InstallDirectory = (Join-Path -Path $env:ProgramFiles -ChildPath 'AGSBlocker'),
+
+    [ValidateNotNullOrEmpty()]
+    [string]$TaskName = 'AdobeGenuineDailyBlocker',
+
+    [Parameter(ParameterSetName = 'Install')]
+    [ValidatePattern('^([01]\d|2[0-3]):[0-5]\d$')]
+    [string]$DailyTime = '09:00',
+
+    [Parameter(ParameterSetName = 'Install')]
+    [switch]$Force,
+
+    [Parameter(ParameterSetName = 'Uninstall', Mandatory = $true)]
+    [switch]$Uninstall,
+
+    [Parameter(ParameterSetName = 'Status', Mandatory = $true)]
+    [switch]$Status
 )
 
+Set-StrictMode -Version 3.0
+$ErrorActionPreference = 'Stop'
+
+$script:ToolVersion       = '1.0.0'
+$script:ServiceName       = 'AGSService'
+$script:ProcessNames      = @('AGSService', 'AdobeGCClient')
+$script:AdobeTaskPatterns = @('AdobeGCInvoker*', '*Adobe-Genuine*')
+$script:BlockerFileName   = 'Invoke-AGSBlock.ps1'
+$script:StateFileName     = 'state.json'
+
 # ----------------------------------------------------------------------------
-# Function: Install-BlockingScript
-# Creates the blocking .ps1 file at the specified path.
+# Output helpers
 # ----------------------------------------------------------------------------
-function Install-BlockingScript {
-    param([string]$Path)
+function Write-Step {
+    param([Parameter(Mandatory)][string]$Message,
+          [ValidateSet('Info', 'Ok', 'Warn', 'Error')][string]$Level = 'Info')
 
-    if (-not (Test-Path "C:\Scripts")) {
-        New-Item -Path "C:\Scripts" -ItemType Directory -Force | Out-Null
-    }
-
-    $content = @"
-Stop-Process -Name AGSService,AdobeGCClient -Force -ErrorAction SilentlyContinue
-Set-Service -Name AGSService -StartupType Disabled -ErrorAction SilentlyContinue
-Stop-Service -Name AGSService -Force -ErrorAction SilentlyContinue
-"@
-
-    [System.IO.File]::WriteAllText($Path, $content, [System.Text.Encoding]::UTF8)
-    Write-Host "Blocker script installed at: $Path"
+    $style = @{
+        Info  = @('[*]', 'Cyan')
+        Ok    = @('[+]', 'Green')
+        Warn  = @('[!]', 'Yellow')
+        Error = @('[x]', 'Red')
+    }[$Level]
+    Write-Host "$($style[0]) $Message" -ForegroundColor $style[1]
 }
 
 # ----------------------------------------------------------------------------
-# Function: Register-ScheduledTask
-# Creates or updates the scheduled task that runs the blocking script.
+# Environment checks
 # ----------------------------------------------------------------------------
-function Register-ScheduledTask {
-    param([string]$ScriptPath, [string]$TaskName)
+function Test-IsAdministrator {
+    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object -TypeName Security.Principal.WindowsPrincipal -ArgumentList $identity
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
 
-    $action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
-    $startupTrigger = New-ScheduledTaskTrigger -AtStartup
-    $dailyTrigger = New-ScheduledTaskTrigger -Daily -At 9:00AM
+# ----------------------------------------------------------------------------
+# Blocker payload (the script the scheduled task runs as SYSTEM)
+# ----------------------------------------------------------------------------
+function Get-BlockerPayload {
+    $processList = ($script:ProcessNames      | ForEach-Object { "'$_'" }) -join ', '
+    $taskList    = ($script:AdobeTaskPatterns | ForEach-Object { "'$_'" }) -join ', '
 
-    $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if ($existingTask) {
-        if (-not $Force) {
-            Write-Warning "The task '$TaskName' already exists. Use -Force to overwrite it."
-            return
+    return @"
+# Generated by AdobeServiceBlocker v$($script:ToolVersion). Do not edit: reinstall instead.
+`$ErrorActionPreference = 'Continue'
+`$log = Join-Path -Path `$PSScriptRoot -ChildPath 'blocker.log'
+
+if ((Test-Path -LiteralPath `$log) -and (Get-Item -LiteralPath `$log).Length -gt 1MB) {
+    Move-Item -LiteralPath `$log -Destination "`$log.1" -Force
+}
+
+function Write-Log([string]`$Message) {
+    '{0}  {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), `$Message |
+        Out-File -LiteralPath `$log -Append -Encoding utf8
+}
+
+`$service = Get-Service -Name '$($script:ServiceName)' -ErrorAction SilentlyContinue
+if (`$service) {
+    if (`$service.Status -ne 'Stopped') {
+        Stop-Service -Name `$service.Name -Force -ErrorAction SilentlyContinue
+        Write-Log "Stopped service `$(`$service.Name)"
+    }
+    if (`$service.StartType -ne 'Disabled') {
+        Set-Service -Name `$service.Name -StartupType Disabled
+        Write-Log "Disabled service `$(`$service.Name) (was `$(`$service.StartType))"
+    }
+}
+
+Get-Process -Name $processList -ErrorAction SilentlyContinue | ForEach-Object {
+    Stop-Process -Id `$_.Id -Force -ErrorAction SilentlyContinue
+    Write-Log "Terminated process `$(`$_.ProcessName) (PID `$(`$_.Id))"
+}
+
+foreach (`$pattern in @($taskList)) {
+    Get-ScheduledTask -TaskName `$pattern -ErrorAction SilentlyContinue |
+        Where-Object { `$_.State -ne 'Disabled' } |
+        ForEach-Object {
+            `$null = Disable-ScheduledTask -InputObject `$_
+            Write-Log "Disabled scheduled task `$(`$_.TaskPath)`$(`$_.TaskName)"
         }
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false | Out-Null
+}
+"@
+}
+
+# ----------------------------------------------------------------------------
+# Install steps
+# ----------------------------------------------------------------------------
+function Initialize-SecureDirectory {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not $PSCmdlet.ShouldProcess($Path, 'Create directory writable only by Administrators and SYSTEM')) { return }
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        $null = New-Item -Path $Path -ItemType Directory -Force
     }
 
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $startupTrigger, $dailyTrigger -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null
-    Write-Host "Scheduled task registered: $TaskName"
+    # Break inheritance: SYSTEM and Administrators get full control, Users read-only.
+    # This prevents a standard user from replacing the script that runs as SYSTEM.
+    $icaclsArgs = @(
+        $Path, '/inheritance:r',
+        '/grant:r', '*S-1-5-18:(OI)(CI)F',
+        '/grant:r', '*S-1-5-32-544:(OI)(CI)F',
+        '/grant:r', '*S-1-5-32-545:(OI)(CI)RX'
+    )
+    $null = & icacls.exe @icaclsArgs
+    if ($LASTEXITCODE -ne 0) { throw "icacls failed to secure '$Path' (exit code $LASTEXITCODE)." }
+}
+
+function Save-OriginalState {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([Parameter(Mandatory)][string]$Directory)
+
+    $statePath = Join-Path -Path $Directory -ChildPath $script:StateFileName
+    if (Test-Path -LiteralPath $statePath) { return }   # Keep the very first snapshot.
+
+    $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
+    $state = [ordered]@{
+        toolVersion      = $script:ToolVersion
+        installedAt      = (Get-Date).ToString('o')
+        serviceStartType = if ($service) { [string]$service.StartType } else { $null }
+    }
+
+    if ($PSCmdlet.ShouldProcess($statePath, 'Save original service state')) {
+        $state | ConvertTo-Json | Out-File -LiteralPath $statePath -Encoding utf8
+    }
+}
+
+function Install-BlockerScript {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Directory)
+
+    $path = Join-Path -Path $Directory -ChildPath $script:BlockerFileName
+    if ($PSCmdlet.ShouldProcess($path, 'Write blocker script')) {
+        # UTF-8 with BOM so Windows PowerShell 5.1 reads it correctly.
+        [IO.File]::WriteAllText($path, (Get-BlockerPayload), (New-Object -TypeName Text.UTF8Encoding -ArgumentList $true))
+    }
+    return $path
+}
+
+function Install-BlockerTask {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([Parameter(Mandatory)][string]$BlockerPath,
+          [Parameter(Mandatory)][string]$Name,
+          [Parameter(Mandatory)][string]$At)
+
+    $powershell = Join-Path -Path $env:SystemRoot -ChildPath 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $arguments  = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$BlockerPath`""
+
+    $action    = New-ScheduledTaskAction -Execute $powershell -Argument $arguments
+    $triggers  = @(
+        New-ScheduledTaskTrigger -AtStartup
+        New-ScheduledTaskTrigger -Daily -At ([datetime]::ParseExact($At, 'HH:mm', $null))
+    )
+    $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest
+    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                    -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+
+    if ($PSCmdlet.ShouldProcess($Name, 'Register scheduled task')) {
+        # Module-qualified so it can never be shadowed by a function of the same name.
+        $null = ScheduledTasks\Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers `
+                    -Principal $principal -Settings $settings `
+                    -Description 'Keeps Adobe Genuine Service (AGSService) stopped and disabled. Installed by AdobeServiceBlocker.' `
+                    -Force
+    }
+}
+
+function Invoke-Install {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([int])]
+    param()
+
+    $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($existing -and -not $Force) {
+        Write-Step "Scheduled task '$TaskName' already exists. Use -Force to reinstall, or -Uninstall to remove it." -Level Warn
+        return 1
+    }
+
+    Write-Step "Preparing secure directory: $InstallDirectory"
+    Initialize-SecureDirectory -Path $InstallDirectory
+    Save-OriginalState -Directory $InstallDirectory
+
+    $blockerPath = Install-BlockerScript -Directory $InstallDirectory
+    Write-Step "Blocker script written: $blockerPath" -Level Ok
+
+    Install-BlockerTask -BlockerPath $blockerPath -Name $TaskName -At $DailyTime
+    Write-Step "Scheduled task registered: $TaskName (at startup and daily at $DailyTime, as SYSTEM)" -Level Ok
+
+    if ($PSCmdlet.ShouldProcess($TaskName, 'Run blocker now')) {
+        Start-ScheduledTask -TaskName $TaskName
+        $logPath = Join-Path -Path $InstallDirectory -ChildPath 'blocker.log'
+        Write-Step "Blocker started. Log: $logPath" -Level Ok
+    }
+    return 0
 }
 
 # ----------------------------------------------------------------------------
-# Function: Disable-AdobeTasks
-# Disables Adobe-related scheduled tasks.
+# Uninstall
 # ----------------------------------------------------------------------------
-function Disable-AdobeTasks {
-    Get-ScheduledTask -TaskName "*AdobeGC*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
-    Get-ScheduledTask -TaskName "*Adobe-Genuine*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
-    Write-Host "Adobe-related tasks disabled (if they existed)."
+function Invoke-Uninstall {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([int])]
+    param()
+
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    $directory = $null
+    if ($task) {
+        # Locate the install directory from the task itself, so custom paths are handled.
+        $match = [regex]::Match([string]$task.Actions[0].Arguments, '-File\s+"([^"]+)"')
+        if ($match.Success) { $directory = Split-Path -Path $match.Groups[1].Value -Parent }
+    }
+    if (-not $directory) { $directory = $InstallDirectory }
+
+    $statePath = Join-Path -Path $directory -ChildPath $script:StateFileName
+    $originalStartType = 'Manual'
+    if (Test-Path -LiteralPath $statePath) {
+        $saved = (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).serviceStartType
+        if ($saved) { $originalStartType = $saved }
+    }
+
+    if ($task -and $PSCmdlet.ShouldProcess($TaskName, 'Unregister scheduled task')) {
+        ScheduledTasks\Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+        Write-Step "Scheduled task removed: $TaskName" -Level Ok
+    }
+
+    $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
+    if ($service -and $PSCmdlet.ShouldProcess($script:ServiceName, "Restore startup type to $originalStartType")) {
+        Set-Service -Name $script:ServiceName -StartupType $originalStartType
+        Write-Step "$($script:ServiceName) startup type restored to $originalStartType" -Level Ok
+    }
+
+    foreach ($pattern in $script:AdobeTaskPatterns) {
+        Get-ScheduledTask -TaskName $pattern -ErrorAction SilentlyContinue |
+            Where-Object { $_.State -eq 'Disabled' } |
+            ForEach-Object {
+                if ($PSCmdlet.ShouldProcess($_.TaskName, 'Re-enable scheduled task')) {
+                    $null = Enable-ScheduledTask -InputObject $_
+                    Write-Step "Re-enabled scheduled task: $($_.TaskName)" -Level Ok
+                }
+            }
+    }
+
+    if ((Test-Path -LiteralPath $directory) -and $PSCmdlet.ShouldProcess($directory, 'Remove install directory')) {
+        Remove-Item -LiteralPath $directory -Recurse -Force
+        Write-Step "Install directory removed: $directory" -Level Ok
+    }
+    return 0
 }
 
 # ----------------------------------------------------------------------------
-# Main flow
+# Status
 # ----------------------------------------------------------------------------
-try {
-    Install-BlockingScript -Path $ScriptPath
-    Register-ScheduledTask -ScriptPath $ScriptPath -TaskName $TaskName -Force:$Force
-    Disable-AdobeTasks
+function Get-BlockerStatus {
+    [CmdletBinding()]
+    param()
+
+    $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
+    $task    = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    $info    = if ($task) { $task | Get-ScheduledTaskInfo } else { $null }
+
+    $adobeTasks = foreach ($pattern in $script:AdobeTaskPatterns) {
+        Get-ScheduledTask -TaskName $pattern -ErrorAction SilentlyContinue |
+            ForEach-Object { '{0} ({1})' -f $_.TaskName, $_.State }
+    }
+
+    [pscustomobject]@{
+        ServiceInstalled  = [bool]$service
+        ServiceStatus     = if ($service) { [string]$service.Status }    else { 'n/a' }
+        ServiceStartType  = if ($service) { [string]$service.StartType } else { 'n/a' }
+        RunningProcesses  = @(Get-Process -Name $script:ProcessNames -ErrorAction SilentlyContinue).Count
+        BlockerTask       = if ($task) { [string]$task.State } else { 'Not installed' }
+        LastRun           = if ($info) { $info.LastRunTime } else { $null }
+        LastResult        = if ($info) { $info.LastTaskResult } else { $null }
+        NextRun           = if ($info) { $info.NextRunTime } else { $null }
+        AdobeGenuineTasks = @($adobeTasks)
+    }
 }
-catch {
-    Write-Error "Error during execution: $_"
-    exit 1
+
+# ----------------------------------------------------------------------------
+# Entry point (skipped when the file is dot-sourced)
+# ----------------------------------------------------------------------------
+if ($MyInvocation.InvocationName -ne '.') {
+    if (-not (Test-IsAdministrator)) {
+        Write-Step 'This script must be run from an elevated PowerShell session (Run as Administrator).' -Level Error
+        exit 1
+    }
+
+    Write-Step "AdobeServiceBlocker v$($script:ToolVersion)"
+    try {
+        $exitCode = switch ($PSCmdlet.ParameterSetName) {
+            'Uninstall' { Invoke-Uninstall }
+            'Status'    { Get-BlockerStatus | Format-List | Out-Host; 0 }
+            default     { Invoke-Install }
+        }
+        exit $exitCode
+    }
+    catch {
+        Write-Step "Failed: $($_.Exception.Message)" -Level Error
+        exit 1
+    }
 }

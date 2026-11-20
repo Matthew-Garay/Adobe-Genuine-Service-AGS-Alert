@@ -8,7 +8,7 @@
 
 </div>
 
----
+
 
 ## About the Project
 
@@ -21,7 +21,7 @@
 
 Everything is reversible: the original `AGSService` startup mode is saved on install and restored automatically when running `-Uninstall`.
 
----
+
 
 ## Detected AGS Prompts & Error Messages
 
@@ -36,7 +36,7 @@ Blocks the recurring English banners, modal dialogs, and pop-up alerts triggered
   <img src="adobe-genuine-alert.png" alt="Adobe Genuine Service Alert Dialog" width="520">
 </p>
 
----
+
 
 ## How to Use
 
@@ -59,7 +59,7 @@ Blocks the recurring English banners, modal dialogs, and pop-up alerts triggered
 > [!NOTE]
 > `irm` (Invoke-RestMethod) downloads the script from the raw GitHub source, and `iex` (Invoke-Expression) runs it in memory. Always check the URL before you run a remote script.
 
----
+
 
 ### Method 2: Local Execution (Acrobat Installer & Alert Blocker)
 
@@ -89,7 +89,7 @@ Blocks the recurring English banners, modal dialogs, and pop-up alerts triggered
 > - `.\scripts\AdobeServiceBlocker.ps1 -Status` shows the current state of the service, processes and tasks without changing anything.
 > - `.\scripts\AdobeServiceBlocker.ps1 -WhatIf` previews the changes before they are applied.
 
----
+
 
 ## System Requirements
 
@@ -116,7 +116,7 @@ Blocks the recurring English banners, modal dialogs, and pop-up alerts triggered
   </tr>
 </table>
 
----
+
 
 ## Project Structure
 
@@ -132,7 +132,7 @@ Adobe-Genuine-Service-AGS-Alert/
 └── README.md
 ```
 
----
+
 
 ## Contact
 

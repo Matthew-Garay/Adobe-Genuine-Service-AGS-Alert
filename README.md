@@ -12,44 +12,25 @@
 
 ## About the Project
 
-Adobe Genuine Service runs in the background as `AGSService` and `AdobeGCClient`, periodically displaying license enforcement banners and pop-up alerts over Adobe Acrobat. `AdobeServiceBlocker.ps1` installs a lightweight blocker script under `%ProgramFiles%\AGSBlocker` and registers a scheduled task running as `SYSTEM` at startup and once daily. Each execution:
+**Adobe Genuine Service Blocker** keeps `AGSService` and `AdobeGCClient` from interrupting your workflow with recurring license banners and pop-up alerts. `AdobeServiceBlocker.ps1` deploys a lightweight blocker to `%ProgramFiles%\AGSBlocker` and runs a daily + startup `SYSTEM` task that:
 
-- stops the `AGSService` service and sets its startup type to **Disabled**;
-- terminates active `AGSService` and `AdobeGCClient` processes;
-- disables Adobe Genuine scheduled tasks (`AdobeGCInvoker-*`, `*Adobe-Genuine*`);
-- writes every action taken to a rotating log file.
+- Stops `AGSService` and sets its startup type to **Disabled**
+- Kills running `AGSService` and `AdobeGCClient` processes
+- Disables Adobe Genuine scheduled tasks (`AdobeGCInvoker-*`, `*Adobe-Genuine*`)
+- Logs every action to a rotating log file
 
-The installer records the original `AGSService` startup configuration before applying changes. Running `-Uninstall` restores the saved startup configuration and re-enables standard tasks, making every modification reversible.
+Everything is reversible: the original `AGSService` startup mode is saved on install and restored automatically when running `-Uninstall`.
 
 ---
 
 ## Detected AGS Prompts & Error Messages
 
-When Adobe Genuine Service triggers on a system, it displays countdown banners, modal dialogs, or classic system pop-ups in English such as:
+Blocks the recurring English banners, modal dialogs, and pop-up alerts triggered by Adobe Genuine Service, including:
 
-- **Top Countdown / Alert Banners:**
-  - `THIS APP WILL DISABLE IN 10 DAYS` / `THIS APP WILL DISABLE IN 5 DAYS` / `THIS APP WILL DISABLE IN 1 DAY`
-  - `THIS UNLICENSED ADOBE APP WILL BE DISABLED SOON`
-  - `THIS UNLICENSED ADOBE APP HAS BEEN DISABLED`
-  - `UNLICENSED ADOBE APP DETECTED` / `NON-GENUINE ADOBE SOFTWARE DETECTED`
-- **Primary Dialog Headings:**
-  - `This unlicensed Adobe app is not genuine and will be disabled soon`
-  - `This unlicensed Adobe app has been disabled`
-  - `Sorry, this Adobe app is not available`
-  - `You have one or more unlicensed Adobe apps on your device`
-  - `You have one or more non-genuine Adobe apps on your device`
-  - `The Adobe software you are using is not genuine`
-  - `Your unlicensed Adobe app will be disabled soon` / `Your non-genuine Adobe app has been disabled`
-  - `Important notice about your Adobe software`
-- **Window & Service Titles:**
-  - `Adobe Genuine Service Alert`
-  - `Adobe Genuine Software Integrity Service`
-  - `Adobe Genuine Verification Failure`
-  - `Adobe Creative Cloud - Unlicensed App` / `Adobe Acrobat - Unlicensed App`
-- **Common Body Copy:**
-  - *"Adobe offers you a 5-day grace period to switch to a genuine Adobe app — at a discount — and uninstall unlicensed Adobe apps."*
-  - *"This unlicensed Adobe app has been disabled. We've alerted you multiple times that this app is not genuine and will be disabled."*
-  - *"To continue using this app, purchase a genuine Adobe subscription or uninstall this non-genuine software."*
+- **Countdown Banners:** `THIS APP WILL DISABLE IN 10 DAYS / 5 DAYS / 1 DAY`, `THIS UNLICENSED ADOBE APP WILL BE DISABLED SOON`, `THIS UNLICENSED ADOBE APP HAS BEEN DISABLED`, `UNLICENSED ADOBE APP DETECTED`
+- **Main Alerts:** `This unlicensed Adobe app is not genuine and will be disabled soon`, `This unlicensed Adobe app has been disabled`, `Sorry, this Adobe app is not available`, `You have one or more unlicensed Adobe apps on your device`, `The Adobe software you are using is not genuine`
+- **Window & Service Titles:** `Adobe Genuine Service Alert`, `Adobe Genuine Software Integrity Service`, `Adobe Genuine Verification Failure`, `Adobe Acrobat - Unlicensed App`
+- **Grace-Period & Lockout Copy:** *"Adobe offers you a 5-day grace period to switch to a genuine Adobe app at a discount and uninstall unlicensed Adobe apps."* / *"This unlicensed Adobe app has been disabled. We've alerted you multiple times that this app is not genuine and will be disabled."*
 
 <p align="center">
   <img src="adobe-genuine-alert.png" alt="Adobe Genuine Service Alert Dialog" width="520">

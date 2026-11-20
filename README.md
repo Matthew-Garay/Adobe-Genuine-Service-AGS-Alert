@@ -4,7 +4,7 @@
 
 # Adobe Genuine Service Blocker
 
-<p><b>PowerShell automation utility and deployment package that stops, disables, and keeps disabled Adobe Genuine Service (AGS) on Windows—eliminating recurring unlicensed software pop-ups and grace-period warnings alongside an included Adobe Acrobat installer archive.</b></p>
+<p><b>PowerShell utility that stops, disables, and keeps Adobe Genuine Service (AGS) disabled on Windows, preventing unlicensed pop-ups and grace-period notices in Adobe Acrobat.</b></p>
 
 </div>
 
